@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>心灵树洞 - 匿名倾诉平台</title>
     <style>
         :root {
@@ -68,6 +69,20 @@
             background-color: #F3EDF7;
         }
 
+        button {
+            background: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
         .post-list {
             background: white;
             padding: 2rem;
@@ -108,16 +123,24 @@
             transition: background 0.3s;
         }
 
-        .emoji-btn:hover {
-            background: #f5f5f5;
-        }
-
         .time {
             position: absolute;
             right: 15px;
             top: 15px;
             color: #999;
             font-size: 0.8em;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .post-form, .post-list {
+                padding: 1rem;
+            }
+            .category-select {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
@@ -136,88 +159,116 @@
             <button class="category-btn" data-cat="friends">👫 人际交往</button>
         </div>
         <textarea placeholder="请写下你想说的话（2000字以内）..." maxlength="2000"></textarea>
-        <button onclick="submitPost()">匿名发布</button>
+        <button id="submitBtn">匿名发布</button>
     </div>
 
     <div class="post-list">
         <h2>最近倾诉</h2>
-        <div id="posts-container">
-            <!-- 帖子示例 -->
-            <div class="post-item">
-                <div class="time">2小时前</div>
-                <div class="post-meta">💼 工作学习 · 匿名用户</div>
-                <div class="post-content">今天终于鼓起勇气提交了辞职信，虽然不知道未来会怎样，但至少迈出了第一步。</div>
-                <div class="emoji-reactions">
-                    <button class="emoji-btn">👍 12</button>
-                    <button class="emoji-btn">❤️ 8</button>
-                    <button class="emoji-btn">🤗 5</button>
-                </div>
-            </div>
-        </div>
+        <div id="posts-container"></div>
     </div>
 
     <script>
-        // 分类选择逻辑
-        document.querySelectorAll('.category-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
-                this.classList.add('selected');
-            });
-        });
+        // 初始化数据存储
+        let posts = JSON.parse(localStorage.getItem('posts')) || [];
+        
+        // 分类映射
+        const categories = {
+            love: { name: '情感生活', icon: '💖' },
+            work: { name: '工作学习', icon: '💼' },
+            family: { name: '家庭关系', icon: '👨👩👧👦' },
+            friends: { name: '人际交往', icon: '👫' }
+        };
 
-        // 提交帖子
-        function submitPost() {
-            const content = document.querySelector('textarea').value;
-            const category = document.querySelector('.category-btn.selected')?.dataset.cat || '其他';
+        // DOM 元素
+        const postContainer = document.getElementById('posts-container');
+        const categoryButtons = document.querySelectorAll('.category-btn');
+        const textarea = document.querySelector('textarea');
 
-            if (!content.trim()) {
-                alert('请输入内容');
-                return;
-            }
+        // 事件监听
+        document.getElementById('submitBtn').addEventListener('click', submitPost);
+        categoryButtons.forEach(btn => btn.addEventListener('click', selectCategory));
+        
+        // 初始化渲染
+        renderPosts();
 
-            // 创建新帖子
-            const post = document.createElement('div');
-            post.className = 'post-item';
-            post.innerHTML = `
-                <div class="time">刚刚</div>
-                <div class="post-meta">${getCategoryIcon(category)} ${getCategoryName(category)} · 匿名用户</div>
-                <div class="post-content">${content}</div>
+        // 功能函数
+        function selectCategory(e) {
+            categoryButtons.forEach(btn => btn.classList.remove('selected'));
+            e.target.classList.add('selected');
+        }
+
+        function sanitizeHTML(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(timestamp) {
+            const diff = (Date.now() - timestamp) / 1000;
+            if (diff < 60) return '刚刚';
+            if (diff < 3600) return `${Math.floor(diff/60)}分钟前`;
+            if (diff < 86400) return `${Math.floor(diff/3600)}小时前`;
+            return new Date(timestamp).toLocaleDateString();
+        }
+
+        function createPostElement(post) {
+            const postEl = document.createElement('div');
+            postEl.className = 'post-item';
+            postEl.innerHTML = `
+                <div class="time">${formatTime(post.timestamp)}</div>
+                <div class="post-meta">${post.category.icon} ${post.category.name} · 匿名用户</div>
+                <div class="post-content">${post.content}</div>
                 <div class="emoji-reactions">
-                    <button class="emoji-btn" onclick="addReaction(this)">👍 0</button>
-                    <button class="emoji-btn" onclick="addReaction(this)">❤️ 0</button>
-                    <button class="emoji-btn" onclick="addReaction(this)">🤗 0</button>
+                    ${Object.entries(post.reactions).map(([emoji, count]) => `
+                        <button class="emoji-btn" data-emoji="${emoji}">
+                            ${emoji} ${count}
+                        </button>
+                    `).join('')}
                 </div>
             `;
-
-            document.getElementById('posts-container').prepend(post);
-            document.querySelector('textarea').value = '';
+            return postEl;
         }
 
-        // 表情互动
-        function addReaction(btn) {
-            const countSpan = btn.innerHTML.match(/\d+/)[0];
-            btn.innerHTML = btn.innerHTML.replace(/\d+/, parseInt(countSpan) + 1);
+        function renderPosts() {
+            postContainer.innerHTML = '';
+            posts.forEach(post => {
+                const postEl = createPostElement(post);
+                postContainer.appendChild(postEl);
+            });
+            addReactionListeners();
         }
 
-        // 分类映射
-        function getCategoryIcon(cat) {
-            const icons = {
-                love: '💖',
-                work: '💼',
-                family: '👨👩👧👦',
-                friends: '👫'
+        function addReactionListeners() {
+            document.querySelectorAll('.emoji-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const emoji = this.dataset.emoji;
+                    const postIndex = [...postContainer.children].indexOf(this.closest('.post-item'));
+                    posts[postIndex].reactions[emoji]++;
+                    localStorage.setItem('posts', JSON.stringify(posts));
+                    renderPosts();
+                });
+            });
+        }
+
+        function submitPost() {
+            const content = sanitizeHTML(textarea.value.trim());
+            const selectedCategory = document.querySelector('.category-btn.selected')?.dataset.cat || 'other';
+            
+            if (!content) return alert('请输入内容');
+            if (!selectedCategory) return alert('请选择分类');
+
+            const newPost = {
+                content,
+                category: categories[selectedCategory],
+                timestamp: Date.now(),
+                reactions: { '👍': 0, '❤️': 0, '🤗': 0 }
             };
-            return icons[cat] || '💬';
-        }
 
-        function getCategoryName(cat) {
-            const names = {
-                love: '情感生活',
-                work: '工作学习',
-                family: '家庭关系',
-                friends: '人际交往'
-            };
-            return names[cat] || '其他';
+            posts.unshift(newPost);
+            localStorage.setItem('posts', JSON.stringify(posts));
+            textarea.value = '';
+            categoryButtons.forEach(btn => btn.classList.remove('selected'));
+            renderPosts();
         }
     </script>
 </body>
